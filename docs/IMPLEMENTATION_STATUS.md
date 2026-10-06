@@ -16,6 +16,7 @@
 - API and worker environment validation is implemented.
 - Health endpoint and OpenAPI UI are available in the API service.
 - `.env.example` documents local runtime configuration.
+- CI workflow added at `.github/workflows/ci.yml` (native PostgreSQL service, no Docker): install, lint, typecheck, unit tests, build, golden verification, and 1k benchmark, with benchmark results uploaded as an artifact.
 
 ### Phase 2 — Database and job lifecycle
 
@@ -35,10 +36,11 @@
 
 - Git history parsing streams `git log --numstat -z` output, excludes merge commits, includes root commits, and uses rename detection.
 - Binary entries are excluded from line totals while commits remain in the selected set.
+- Submodule (gitlink) pointer changes are counted exactly as Git's own numstat reports them (one line per pointer change). This was corrected this session: the previous `--ignore-submodules=all` flag caused the git golden fixture to under-count by 4 added / 3 removed lines on the `sha1collisiondetection` submodule.
 - File metrics are propagated to ancestor directories and repository root.
 - Raw and mailmap-resolved author identities are stored per analysis.
 - Daily rollups are rebuilt after analysis.
-- Unit tests cover core formula behavior and representative Git history parsing.
+- Unit tests cover core formula behavior, representative Git history parsing, and security controls (SSRF/URL validation, `.git` pointer escape, shell-metacharacter injection, and Git output byte caps).
 
 ### Phase 5 — Query API and author merging
 
@@ -61,18 +63,23 @@
 
 ### Phase 8 — Submission readiness
 
-- Root README now documents architecture, no-Docker setup, configuration, validation commands, metric definitions, fixtures, limitations, and submission checklist.
+- Root README documents architecture, no-Docker setup, configuration, validation commands, metric definitions, fixtures, limitations, and submission checklist.
 - This status file records completed items, validation commands, current limitations, and next actions for cross-chat handoff.
 
-## Validation log
+## Validation log (this session)
 
-- `npx pnpm -C /home/vmuser/SDP-Test typecheck` — passed.
-- `npx pnpm -C /home/vmuser/SDP-Test lint` — passed.
-- `npx pnpm -C /home/vmuser/SDP-Test test` — passed; 2 test files, 7 tests.
+Environment: Node 18.19.1, Git 2.43.0, no global pnpm (`npx pnpm`), PostgreSQL not installed natively.
+
+- `npx pnpm -C /home/vmuser/SDP-Test typecheck` — passed (all 8 projects).
+- `npx pnpm -C /home/vmuser/SDP-Test lint` — passed (`--max-warnings 0`).
+- `npx pnpm -C /home/vmuser/SDP-Test test` — passed; 3 test files, 21 tests (added 14 security tests).
 - `npx pnpm -C /home/vmuser/SDP-Test build` — passed, including the Next.js production build.
-- `npx pnpm -C /home/vmuser/SDP-Test verify:golden cJSON` — passed against `cJSON_6d9f2443ab07.csv`.
-- `RAT_BENCHMARK_SIZES=100 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed and wrote `storage/benchmark-results.json`.
-- `npx pnpm -C /home/vmuser/SDP-Test format:check` — failed because many existing repository files, including the saved plan, are not Prettier-formatted. Files changed in this pass were formatted with `npx prettier --write`.
+- `npx pnpm -C /home/vmuser/SDP-Test verify:golden` — passed for **all three** fixtures (root metrics match exactly):
+  - cJSON: 955 commits, +46,377 / −11,211, churn 57,588, 953 modifications.
+  - Redis: 11,874 commits, +1,110,258 / −500,312, churn 1,610,570, 11,862 modifications.
+  - Git: 61,101 commits, +4,070,371 / −2,375,604, churn 6,445,975, 61,009 modifications.
+- `RAT_BENCHMARK_SIZES=1000 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed and wrote `storage/benchmark-results.json`: 1,000 commits streamed/parsed in ~0.17s, peak RSS ~108 MB (targets: ≤30s and ≤1.5 GB). Synthetic-repo generation (1,000 `git commit` invocations) took ~14s.
+- Embedded PostgreSQL 16.14 was validated to boot and serve queries in this environment via the `embedded-postgres` dev dependency, providing a Docker-free path to run the API/worker/database runtime and future PostgreSQL integration tests without a native install.
 
 Recommended final submission commands:
 
@@ -81,21 +88,21 @@ npx pnpm -C /home/vmuser/SDP-Test typecheck
 npx pnpm -C /home/vmuser/SDP-Test lint
 npx pnpm -C /home/vmuser/SDP-Test test
 npx pnpm -C /home/vmuser/SDP-Test build
-npx pnpm -C /home/vmuser/SDP-Test verify:golden cJSON
+npx pnpm -C /home/vmuser/SDP-Test verify:golden
 RAT_BENCHMARK_SIZES=1000 npx pnpm -C /home/vmuser/SDP-Test benchmark
 ```
 
 ## Unresolved issues and limitations
 
-- Published 10k and 100k benchmark evidence has not yet been generated in this environment.
-- PostgreSQL-backed integration tests and Playwright browser tests are not present.
-- Lecturer sample hashes and expected values beyond the supplied CSV fixtures are not present.
+- PostgreSQL-backed integration tests and Playwright browser tests are scaffolded-for but not yet committed. `embedded-postgres` is installed and proven to boot, so integration tests can run without Docker or a native PostgreSQL install; wiring them into a `test:integration` Vitest project is the immediate next step.
+- Published 10k and 100k benchmark evidence has not yet been generated; 1k evidence is recorded in `storage/benchmark-results.json`.
+- Lecturer sample hashes and expected values beyond the supplied CSV fixtures are not present. The supplied golden CSVs also contain per-object and per-author rows that the current verifier does not assert (it checks the repository-root ALL row); extending verification to those rows is future work.
 - Public GitHub repository creation and final URL submission are external manual steps.
 - Global `pnpm` is not installed in the current shell; `npx pnpm` works.
-- Full Redis and Git golden verification has not been rerun in this session because those fixtures are large; cJSON passed.
+- Very large path lists in the UI rely on API limits/search rather than full tree virtualization.
 
 ## Next three actions
 
-1. Run a 1k synthetic benchmark and record the result if submission time permits.
-2. If time allows, add PostgreSQL integration tests for migration plus metrics query semantics.
+1. Commit the integration-test harness: a `test:integration` Vitest project that boots `embedded-postgres`, runs migrations, analyzes a synthetic repository, and asserts persistence, metric totals, rollups, idempotent reanalysis, and delete cascades.
+2. Add Playwright smoke tests for clone/upload, progress, filtering, and comparison flows.
 3. Generate and record 10k/100k benchmark evidence on the target hardware before final submission.

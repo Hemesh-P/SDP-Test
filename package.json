@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@rat/git-analysis": "workspace:*",
+    "@rat/metrics": "workspace:*",
     "@types/node": "^20.17.19",
     "@typescript-eslint/eslint-plugin": "^8.24.0",
     "@typescript-eslint/parser": "^8.24.0",

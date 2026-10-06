@@ -11,6 +11,9 @@ importers:
       '@rat/git-analysis':
         specifier: workspace:*
         version: link:packages/git-analysis
+      '@rat/metrics':
+        specifier: workspace:*
+        version: link:packages/metrics
       '@types/node':
         specifier: ^20.17.19
         version: 20.19.43

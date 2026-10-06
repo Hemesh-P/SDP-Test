@@ -91,7 +91,7 @@ For each non-binary changed file in a selected non-merge commit set:
 - Churn rate is `churn / selected commit count`.
 - Author ownership is selected-author churn divided by total churn for the same object and commit set.
 
-Commit dates use committer time. Date filtering is inclusive at the start and exclusive at the end. Binary numstat entries and submodules are excluded from line metrics but their commits still count in the selected commit set.
+Commit dates use committer time. Date filtering is inclusive at the start and exclusive at the end. Binary numstat entries are excluded from line metrics, while submodule (gitlink) pointer changes are counted exactly as Git's own numstat reports them (one line per pointer change), matching the supplied golden fixtures. A commit whose only change is binary still counts in the selected commit set.
 
 ## Golden CSV fixtures
 
