@@ -1,0 +1,35 @@
+{
+  "name": "repo-analysis-tool",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,api,worker -c cyan,green,magenta \"pnpm --filter @rat/web dev\" \"pnpm --filter @rat/api dev\" \"pnpm --filter @rat/worker dev\"",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "pnpm --filter @rat/db migrate",
+    "benchmark": "tsx scripts/benchmarks/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.19",
+    "@typescript-eslint/eslint-plugin": "^8.24.0",
+    "@typescript-eslint/parser": "^8.24.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "concurrently": "^9.1.2",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.5.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
+  }
+}
