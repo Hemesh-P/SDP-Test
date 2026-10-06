@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
@@ -161,8 +161,14 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
     try {
       await pipeline(part.file, createWriteStream(archivePath, { flags: 'wx', mode: 0o600 }));
       if (part.file.truncated) throw new Error('UPLOAD_TOO_LARGE');
-      const signature = await readFile(archivePath).then((buffer) => buffer.subarray(0, 4));
-      if (signature.length < 4 || signature[0] !== 0x50 || signature[1] !== 0x4b) {
+      const handle = await open(archivePath, 'r');
+      const signature = Buffer.alloc(4);
+      try {
+        await handle.read(signature, 0, 4, 0);
+      } finally {
+        await handle.close();
+      }
+      if (signature[0] !== 0x50 || signature[1] !== 0x4b) {
         throw new Error('INVALID_ZIP');
       }
       const storagePath = join(config.REPO_STORAGE_DIR, `${id}.git`);
@@ -223,11 +229,15 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
     const repositoryId = parseUuid((request.params as { id?: string }).id);
     const input = CreateAnalysisSchema.parse(request.body);
     const analysisId = randomUUID();
-    await pool.query(
+    const created = await pool.query(
       `INSERT INTO analysis_runs (id, repository_id, reference_name, analyzer_version)
-       SELECT $1, id, $3, '1.0.0' FROM repositories WHERE id = $2`,
+       SELECT $1, id, $3, '1.0.0' FROM repositories WHERE id = $2
+       RETURNING id`,
       [analysisId, repositoryId, input.ref],
     );
+    if (!created.rowCount) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
+    }
     await queue.send('repository.analyze', { repositoryId, analysisId });
     return reply.code(202).send({ id: analysisId, repositoryId, state: 'queued' });
   });
@@ -257,7 +267,8 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
   app.get('/v1/analyses/:id/authors', async (request) => {
     const analysisId = parseUuid((request.params as { id?: string }).id);
     const result = await pool.query(
-      `SELECT ag.id, ag.name, ag.email, ag.is_manual AS "isManual", count(gm.resolved_identity_id)::int AS identities
+      `SELECT ag.id, ag.name, ag.email, ag.is_manual AS "isManual", count(gm.resolved_identity_id)::int AS identities,
+              array_agg(gm.resolved_identity_id)::text[] AS "identityIds"
        FROM author_groups ag
        JOIN author_group_members gm ON gm.group_id = ag.id
        WHERE ag.analysis_id = $1

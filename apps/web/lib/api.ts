@@ -72,6 +72,7 @@ export interface AuthorItem {
   email: string | null;
   isManual: boolean;
   identities: number;
+  identityIds: string[];
 }
 
 export interface CommitItem {
@@ -84,8 +85,14 @@ export interface CommitItem {
   sequence: string;
 }
 
-export function listObjects(repositoryId: string, search = ''): Promise<{ items: ObjectItem[] }> {
-  return api(`/repositories/${repositoryId}/objects?limit=200&search=${encodeURIComponent(search)}`);
+export function listObjects(
+  repositoryId: string,
+  search = '',
+  parentId?: string,
+): Promise<{ items: ObjectItem[] }> {
+  const params = new URLSearchParams({ limit: '200', search });
+  if (parentId) params.set('parentId', parentId);
+  return api(`/repositories/${repositoryId}/objects?${params}`);
 }
 
 export function listAuthors(analysisId: string): Promise<{ items: AuthorItem[] }> {
@@ -94,4 +101,24 @@ export function listAuthors(analysisId: string): Promise<{ items: AuthorItem[] }
 
 export function listCommits(analysisId: string, search = ''): Promise<{ items: CommitItem[]; nextCursor: string | null }> {
   return api(`/analyses/${analysisId}/commits?limit=200&search=${encodeURIComponent(search)}`);
+}
+
+export function createCommitSet(input: {
+  analysisId: string;
+  name: string;
+  commitIds: string[];
+}): Promise<{ id: string; commitCount: number }> {
+  return api('/commit-sets', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function mergeAuthors(input: {
+  analysisId: string;
+  name: string;
+  identityIds: string[];
+}): Promise<AuthorItem> {
+  return api('/authors/merge', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function unmergeAuthor(groupId: string): Promise<{ id: string; unmerged: boolean }> {
+  return api(`/authors/${groupId}/unmerge`, { method: 'POST', body: '{}' });
 }

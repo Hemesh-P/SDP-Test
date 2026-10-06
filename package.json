@@ -2,6 +2,7 @@
   "name": "repo-analysis-tool",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=18.18.0"
@@ -17,9 +18,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "pnpm --filter @rat/db migrate",
-    "benchmark": "tsx scripts/benchmarks/run.ts"
+    "benchmark": "tsx scripts/benchmarks/run.ts",
+    "verify:golden": "tsx scripts/verify-golden.ts"
   },
   "devDependencies": {
+    "@rat/git-analysis": "workspace:*",
     "@types/node": "^20.17.19",
     "@typescript-eslint/eslint-plugin": "^8.24.0",
     "@typescript-eslint/parser": "^8.24.0",

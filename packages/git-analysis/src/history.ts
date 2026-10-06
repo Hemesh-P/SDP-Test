@@ -126,6 +126,7 @@ export async function* streamHistory(
     '--topo-order',
     '--no-color',
     '--no-ext-diff',
+    '--ignore-submodules=all',
     '--find-renames=50%',
     '--numstat',
     '-z',
