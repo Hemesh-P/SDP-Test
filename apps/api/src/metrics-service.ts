@@ -51,7 +51,8 @@ async function resolveObjectId(pool: Pool, analysisId: string, requested?: strin
   const root = await pool.query<{ id: string }>(
     `SELECT o.id FROM objects o
      JOIN analysis_runs a ON a.repository_id = o.repository_id
-     WHERE a.id = $1 AND o.kind = 'root' AND octet_length(o.path_bytes) = 0
+     WHERE a.id = $1 AND o.kind = 'root'
+     ORDER BY octet_length(o.path_bytes)
      LIMIT 1`,
     [analysisId],
   );

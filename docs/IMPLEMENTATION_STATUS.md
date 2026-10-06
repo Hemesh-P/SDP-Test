@@ -16,7 +16,7 @@
 - API and worker environment validation is implemented.
 - Health endpoint and OpenAPI UI are available in the API service.
 - `.env.example` documents local runtime configuration.
-- CI workflow added at `.github/workflows/ci.yml` (native PostgreSQL service, no Docker): install, lint, typecheck, unit tests, build, golden verification, and 1k benchmark, with benchmark results uploaded as an artifact.
+- CI workflow is still not present in this checkout; the documented validation commands were run locally instead.
 
 ### Phase 2 — Database and job lifecycle
 
@@ -59,7 +59,7 @@
 ### Phase 7 — Large-repository hardening
 
 - `scripts/verify-golden.ts` validates supplied cJSON, Redis, and Git CSV repository-root metrics.
-- `scripts/benchmarks/run.ts` generates deterministic synthetic repositories and records analysis throughput and peak RSS to `storage/benchmark-results.json`.
+- `scripts/benchmarks/run.ts` generates deterministic synthetic repositories and records analysis throughput and peak RSS to `storage/benchmark-results.json`; 1k, 10k, and 100k synthetic runs completed successfully in this environment.
 
 ### Phase 8 — Submission readiness
 
@@ -68,18 +68,19 @@
 
 ## Validation log (this session)
 
-Environment: Node 18.19.1, Git 2.43.0, no global pnpm (`npx pnpm`), PostgreSQL not installed natively.
+Environment: Node 18.19.1, Git 2.43.0, no global pnpm (`npx pnpm`). Native `psql`/`pg_isready` are not installed and `sudo apt-get install postgresql` could not proceed because sudo requires an interactive password. The embedded PostgreSQL dev database on `127.0.0.1:55432` was available and used for migration validation.
 
-- `npx pnpm -C /home/vmuser/SDP-Test typecheck` — passed (all 8 projects).
-- `npx pnpm -C /home/vmuser/SDP-Test lint` — passed (`--max-warnings 0`).
-- `npx pnpm -C /home/vmuser/SDP-Test test` — passed; 3 test files, 21 tests (added 14 security tests).
+- `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55432/rat npx pnpm -C /home/vmuser/SDP-Test db:migrate` — passed; migrations reported up to date.
+- `npx pnpm -C /home/vmuser/SDP-Test typecheck` — passed (all 8 workspace projects).
+- `npx pnpm -C /home/vmuser/SDP-Test lint` — initially failed on unused variables in `scripts/_golden-diff.ts`; after replacing unused tuple variables with `.values()` iteration, lint passed with `--max-warnings 0`.
+- `npx pnpm -C /home/vmuser/SDP-Test test` — passed; 3 test files, 21 tests.
 - `npx pnpm -C /home/vmuser/SDP-Test build` — passed, including the Next.js production build.
-- `npx pnpm -C /home/vmuser/SDP-Test verify:golden` — passed for **all three** fixtures (root metrics match exactly):
-  - cJSON: 955 commits, +46,377 / −11,211, churn 57,588, 953 modifications.
-  - Redis: 11,874 commits, +1,110,258 / −500,312, churn 1,610,570, 11,862 modifications.
-  - Git: 61,101 commits, +4,070,371 / −2,375,604, churn 6,445,975, 61,009 modifications.
-- `RAT_BENCHMARK_SIZES=1000 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed and wrote `storage/benchmark-results.json`: 1,000 commits streamed/parsed in ~0.17s, peak RSS ~108 MB (targets: ≤30s and ≤1.5 GB). Synthetic-repo generation (1,000 `git commit` invocations) took ~14s.
-- Embedded PostgreSQL 16.14 was validated to boot and serve queries in this environment via the `embedded-postgres` dev dependency, providing a Docker-free path to run the API/worker/database runtime and future PostgreSQL integration tests without a native install.
+- `npx pnpm -C /home/vmuser/SDP-Test verify:golden cJSON` — passed: 955 commits, +46,377 / −11,211, churn 57,588, 953 modifications.
+- `npx pnpm -C /home/vmuser/SDP-Test verify:golden redis` — passed: 11,874 commits, +1,110,258 / −500,312, churn 1,610,570, 11,862 modifications. A first attempt using `Redis` failed because fixture names are case-sensitive.
+- `npx pnpm -C /home/vmuser/SDP-Test verify:golden git` — passed: 61,101 commits, +4,070,371 / −2,375,604, churn 6,445,975, 61,009 modifications.
+- `RAT_BENCHMARK_SIZES=1000 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed: 1,000 commits, generation ~12.60s, analysis ~0.093s, peak RSS ~109.11 MB.
+- `RAT_BENCHMARK_SIZES=10000 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed: 10,000 commits, generation ~127.69s, analysis ~0.304s, peak RSS ~110.84 MB.
+- `RAT_BENCHMARK_SIZES=100000 npx pnpm -C /home/vmuser/SDP-Test benchmark` — passed: 100,000 commits, generation ~1,698.49s, analysis ~5.443s, peak RSS ~110.52 MB. The latest run overwrote `storage/benchmark-results.json` with the 100k result.
 
 Recommended final submission commands:
 
@@ -89,20 +90,20 @@ npx pnpm -C /home/vmuser/SDP-Test lint
 npx pnpm -C /home/vmuser/SDP-Test test
 npx pnpm -C /home/vmuser/SDP-Test build
 npx pnpm -C /home/vmuser/SDP-Test verify:golden
-RAT_BENCHMARK_SIZES=1000 npx pnpm -C /home/vmuser/SDP-Test benchmark
+RAT_BENCHMARK_SIZES=1000,10000,100000 npx pnpm -C /home/vmuser/SDP-Test benchmark
 ```
 
 ## Unresolved issues and limitations
 
-- PostgreSQL-backed integration tests and Playwright browser tests are scaffolded-for but not yet committed. `embedded-postgres` is installed and proven to boot, so integration tests can run without Docker or a native PostgreSQL install; wiring them into a `test:integration` Vitest project is the immediate next step.
-- Published 10k and 100k benchmark evidence has not yet been generated; 1k evidence is recorded in `storage/benchmark-results.json`.
+- PostgreSQL-backed integration tests and Playwright browser tests are not committed. The embedded PostgreSQL dev path works for migration validation, so a `test:integration` Vitest project can be added without Docker or a native PostgreSQL install.
 - Lecturer sample hashes and expected values beyond the supplied CSV fixtures are not present. The supplied golden CSVs also contain per-object and per-author rows that the current verifier does not assert (it checks the repository-root ALL row); extending verification to those rows is future work.
-- Public GitHub repository creation and final URL submission are external manual steps.
+- Public GitHub remote reachability was verified with `git ls-remote --heads origin`; final URL submission remains an external manual step. The configured repository URL is `https://github.com/Hemesh-P/SDP-Test.git`.
 - Global `pnpm` is not installed in the current shell; `npx pnpm` works.
 - Very large path lists in the UI rely on API limits/search rather than full tree virtualization.
+- CI workflow files are not present in this checkout, so validation is currently manual/local.
 
 ## Next three actions
 
-1. Commit the integration-test harness: a `test:integration` Vitest project that boots `embedded-postgres`, runs migrations, analyzes a synthetic repository, and asserts persistence, metric totals, rollups, idempotent reanalysis, and delete cascades.
+1. Add PostgreSQL integration tests that use the embedded database, run migrations, analyze a synthetic repository, and assert persistence, metric totals, rollups, idempotent reanalysis, and delete cascades.
 2. Add Playwright smoke tests for clone/upload, progress, filtering, and comparison flows.
-3. Generate and record 10k/100k benchmark evidence on the target hardware before final submission.
+3. Submit the verified repository URL `https://github.com/Hemesh-P/SDP-Test.git` through the required external submission channel.
