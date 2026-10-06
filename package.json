@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "pnpm --filter @rat/db migrate",
+    "db:dev": "tsx scripts/dev-db.ts",
     "benchmark": "tsx scripts/benchmarks/run.ts",
     "verify:golden": "tsx scripts/verify-golden.ts"
   },

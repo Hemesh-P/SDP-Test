@@ -10,6 +10,7 @@ test-results/
 .env.*.local
 !.env.example
 storage/
+.pgdata/
 .tmp/
 *.log
 .DS_Store
