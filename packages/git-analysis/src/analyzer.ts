@@ -228,6 +228,12 @@ async function insertJson(
   if (rows.length > 0) await client.query(sql, [JSON.stringify(rows)]);
 }
 
+function dedupeMetrics(rows: readonly MetricRow[]): MetricRow[] {
+  const byKey = new Map<string, MetricRow>();
+  for (const row of rows) byKey.set(`${row.commit_id}:${row.object_id}`, row);
+  return [...byKey.values()];
+}
+
 async function flushBatch(pool: Pool, batch: Batch): Promise<void> {
   const client = await pool.connect();
   try {
@@ -309,7 +315,7 @@ async function flushBatch(pool: Pool, batch: Batch): Promise<void> {
        WHERE added + removed > 0
        ON CONFLICT (commit_id, object_id) DO UPDATE SET
          added = EXCLUDED.added, removed = EXCLUDED.removed`,
-      batch.metrics,
+      dedupeMetrics(batch.metrics),
     );
     await client.query('COMMIT');
   } catch (error) {
