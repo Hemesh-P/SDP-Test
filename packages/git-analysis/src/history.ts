@@ -126,7 +126,9 @@ export async function* streamHistory(
     '--topo-order',
     '--no-color',
     '--no-ext-diff',
-    '--ignore-submodules=all',
+    // Submodule (gitlink) pointer changes are intentionally kept so that Git's
+    // own numstat reports them as one-line changes, matching the supplied
+    // golden fixtures. Submodule contents are never recursed into.
     '--find-renames=50%',
     '--numstat',
     '-z',
