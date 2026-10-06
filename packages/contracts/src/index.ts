@@ -103,6 +103,15 @@ export const CreateCommitSetSchema = z.object({
   commitIds: z.array(z.string().uuid()).min(1).max(100_000),
 });
 
+export const UpdateCommitSetSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    commitIds: z.array(z.string().uuid()).min(1).max(100_000).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.commitIds !== undefined, {
+    message: 'At least one commit-set field must be supplied',
+  });
+
 export const MergeAuthorsSchema = z.object({
   analysisId: z.string().uuid(),
   name: z.string().trim().min(1).max(200),
@@ -131,4 +140,5 @@ export type MetricsQuery = z.infer<typeof MetricsQuerySchema>;
 export type MetricSummary = z.infer<typeof MetricSummarySchema>;
 export type MetricsResponse = z.infer<typeof MetricsResponseSchema>;
 export type CreateCommitSetInput = z.infer<typeof CreateCommitSetSchema>;
+export type UpdateCommitSetInput = z.infer<typeof UpdateCommitSetSchema>;
 export type MergeAuthorsInput = z.infer<typeof MergeAuthorsSchema>;

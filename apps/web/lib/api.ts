@@ -20,9 +20,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-    throw new ApiError(payload?.error?.message ?? `Request failed (${response.status})`, response.status);
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiError(
+      payload?.error?.message ?? `Request failed (${response.status})`,
+      response.status,
+    );
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -30,7 +36,11 @@ export function listRepositories(): Promise<{ items: Repository[] }> {
   return api('/repositories');
 }
 
-export function cloneRepository(input: { name: string; url: string; ref?: string }): Promise<Repository> {
+export function cloneRepository(input: {
+  name: string;
+  url: string;
+  ref?: string;
+}): Promise<Repository> {
   return api('/repositories/clone', { method: 'POST', body: JSON.stringify(input) });
 }
 
@@ -99,8 +109,22 @@ export function listAuthors(analysisId: string): Promise<{ items: AuthorItem[] }
   return api(`/analyses/${analysisId}/authors`);
 }
 
-export function listCommits(analysisId: string, search = ''): Promise<{ items: CommitItem[]; nextCursor: string | null }> {
+export function listCommits(
+  analysisId: string,
+  search = '',
+): Promise<{ items: CommitItem[]; nextCursor: string | null }> {
   return api(`/analyses/${analysisId}/commits?limit=200&search=${encodeURIComponent(search)}`);
+}
+
+export interface CommitSetItem {
+  id: string;
+  name: string;
+  createdAt: string;
+  commitCount: number;
+}
+
+export function listCommitSets(analysisId: string): Promise<{ items: CommitSetItem[] }> {
+  return api(`/analyses/${analysisId}/commit-sets`);
 }
 
 export function createCommitSet(input: {
@@ -109,6 +133,17 @@ export function createCommitSet(input: {
   commitIds: string[];
 }): Promise<{ id: string; commitCount: number }> {
   return api('/commit-sets', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateCommitSet(
+  id: string,
+  input: { name?: string; commitIds?: string[] },
+): Promise<{ id: string; analysisId: string; updated: true }> {
+  return api(`/commit-sets/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+}
+
+export function deleteCommitSet(id: string): Promise<void> {
+  return api(`/commit-sets/${id}`, { method: 'DELETE' });
 }
 
 export function mergeAuthors(input: {

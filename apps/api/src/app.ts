@@ -19,6 +19,7 @@ import {
   MergeAuthorsSchema,
   MetricsQuerySchema,
   PaginationSchema,
+  UpdateCommitSetSchema,
 } from '@rat/contracts';
 import { validateRemoteUrl } from '@rat/git-analysis';
 import { queryMetrics } from './metrics-service';
@@ -68,7 +69,10 @@ function repositoryDto(row: RepositoryRow) {
   };
 }
 
-async function withTransaction<T>(pool: Pool, operation: (client: PoolClient) => Promise<T>): Promise<T> {
+async function withTransaction<T>(
+  pool: Pool,
+  operation: (client: PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -110,7 +114,9 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
   app.addHook('preHandler', async (request, reply) => {
     if (!config.ADMIN_TOKEN || ['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
     if (request.headers['x-admin-token'] !== config.ADMIN_TOKEN) {
-      await reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'A valid admin token is required' } });
+      await reply
+        .code(401)
+        .send({ error: { code: 'UNAUTHORIZED', message: 'A valid admin token is required' } });
     }
   });
 
@@ -120,14 +126,21 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
   });
 
   app.get('/v1/repositories', async () => {
-    const result = await pool.query<RepositoryRow>('SELECT * FROM repositories ORDER BY created_at DESC');
+    const result = await pool.query<RepositoryRow>(
+      'SELECT * FROM repositories ORDER BY created_at DESC',
+    );
     return { items: result.rows.map(repositoryDto) };
   });
 
   app.get('/v1/repositories/:id', async (request, reply) => {
     const id = parseUuid((request.params as { id?: string }).id);
-    const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [id]);
-    if (!result.rowCount) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
+    const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [
+      id,
+    ]);
+    if (!result.rowCount)
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
     return repositoryDto(result.rows[0]!);
   });
 
@@ -143,17 +156,24 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
       [id, input.name, remote.safeDisplayUrl, storagePath, input.ref ?? null],
     );
     await queue.send('repository.ingest', { repositoryId: id });
-    const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [id]);
+    const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [
+      id,
+    ]);
     return reply.code(202).send(repositoryDto(result.rows[0]!));
   });
 
   app.post('/v1/repositories/upload', async (request, reply) => {
     const part = await request.file();
-    if (!part) return reply.code(400).send({ error: { code: 'FILE_REQUIRED', message: 'A ZIP file is required' } });
+    if (!part)
+      return reply
+        .code(400)
+        .send({ error: { code: 'FILE_REQUIRED', message: 'A ZIP file is required' } });
     const nameField = part.fields.name;
     const firstNameField = Array.isArray(nameField) ? nameField[0] : nameField;
     const uploadedName =
-      firstNameField && 'value' in firstNameField ? firstNameField.value : part.filename.replace(/\.zip$/i, '');
+      firstNameField && 'value' in firstNameField
+        ? firstNameField.value
+        : part.filename.replace(/\.zip$/i, '');
     const name = z.string().trim().min(1).max(120).parse(uploadedName);
     const id = randomUUID();
     await mkdir(config.UPLOAD_TMP_DIR, { recursive: true, mode: 0o700 });
@@ -179,7 +199,9 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
         [id, name, archivePath, storagePath],
       );
       await queue.send('repository.ingest', { repositoryId: id });
-      const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [id]);
+      const result = await pool.query<RepositoryRow>('SELECT * FROM repositories WHERE id = $1', [
+        id,
+      ]);
       return reply.code(202).send(repositoryDto(result.rows[0]!));
     } catch (error) {
       await rm(archivePath, { force: true });
@@ -189,11 +211,14 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
 
   app.post('/v1/repositories/:id/refresh', async (request, reply) => {
     const id = parseUuid((request.params as { id?: string }).id);
-    const result = await pool.query('UPDATE repositories SET state = $2, progress = 0, updated_at = now() WHERE id = $1', [
-      id,
-      'queued',
-    ]);
-    if (!result.rowCount) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
+    const result = await pool.query(
+      'UPDATE repositories SET state = $2, progress = 0, updated_at = now() WHERE id = $1',
+      [id, 'queued'],
+    );
+    if (!result.rowCount)
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
     await queue.send('repository.refresh', { repositoryId: id });
     return reply.code(202).send({ repositoryId: id, state: 'queued' });
   });
@@ -206,7 +231,10 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
        RETURNING storage_path, source_archive_path`,
       [id],
     );
-    if (!result.rowCount) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
+    if (!result.rowCount)
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
     await queue.send('repository.delete', {
       repositoryId: id,
       storagePath: result.rows[0]!.storage_path,
@@ -236,7 +264,9 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
       [analysisId, repositoryId, input.ref],
     );
     if (!created.rowCount) {
-      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Repository not found' } });
     }
     await queue.send('repository.analyze', { repositoryId, analysisId });
     return reply.code(202).send({ id: analysisId, repositoryId, state: 'queued' });
@@ -244,7 +274,9 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
 
   app.get('/v1/repositories/:id/objects', async (request) => {
     const repositoryId = parseUuid((request.params as { id?: string }).id);
-    const query = PaginationSchema.extend({ parentId: z.string().uuid().optional() }).parse(request.query);
+    const query = PaginationSchema.extend({ parentId: z.string().uuid().optional() }).parse(
+      request.query,
+    );
     const values: unknown[] = [repositoryId, query.limit];
     const clauses = ['repository_id = $1'];
     if (query.parentId) {
@@ -303,28 +335,90 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
     return { items: result.rows, nextCursor: result.rows.at(-1)?.sequence ?? null };
   });
 
+  app.get('/v1/analyses/:id/commit-sets', async (request) => {
+    const analysisId = parseUuid((request.params as { id?: string }).id);
+    const result = await pool.query(
+      `SELECT ss.id, ss.name, ss.created_at AS "createdAt", count(sm.commit_id)::int AS "commitCount"
+       FROM saved_commit_sets ss
+       LEFT JOIN saved_commit_set_members sm ON sm.commit_set_id = ss.id
+       WHERE ss.analysis_id = $1
+       GROUP BY ss.id
+       ORDER BY ss.created_at DESC`,
+      [analysisId],
+    );
+    return { items: result.rows };
+  });
+
   app.post('/v1/commit-sets', async (request, reply) => {
     const input = CreateCommitSetSchema.parse(request.body);
     const id = randomUUID();
+    const uniqueCommitIds = [...new Set(input.commitIds)];
     await withTransaction(pool, async (client) => {
       const valid = await client.query(
         `SELECT count(*)::int AS count FROM analysis_commits
          WHERE analysis_id = $1 AND commit_id = ANY($2::uuid[])`,
-        [input.analysisId, input.commitIds],
+        [input.analysisId, uniqueCommitIds],
       );
-      if (valid.rows[0]?.count !== new Set(input.commitIds).size) throw new Error('INVALID_COMMIT_SET');
-      await client.query('INSERT INTO saved_commit_sets (id, analysis_id, name) VALUES ($1, $2, $3)', [
-        id,
-        input.analysisId,
-        input.name,
-      ]);
+      if (valid.rows[0]?.count !== uniqueCommitIds.length) throw new Error('INVALID_COMMIT_SET');
+      await client.query(
+        'INSERT INTO saved_commit_sets (id, analysis_id, name) VALUES ($1, $2, $3)',
+        [id, input.analysisId, input.name],
+      );
       await client.query(
         `INSERT INTO saved_commit_set_members (commit_set_id, commit_id)
          SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
-        [id, input.commitIds],
+        [id, uniqueCommitIds],
       );
     });
-    return reply.code(201).send({ id, ...input, commitCount: new Set(input.commitIds).size });
+    return reply
+      .code(201)
+      .send({ id, ...input, commitIds: uniqueCommitIds, commitCount: uniqueCommitIds.length });
+  });
+
+  app.patch('/v1/commit-sets/:id', async (request, reply) => {
+    const id = parseUuid((request.params as { id?: string }).id);
+    const input = UpdateCommitSetSchema.parse(request.body);
+    let analysisId: string | undefined;
+    await withTransaction(pool, async (client) => {
+      const existing = await client.query<{ analysis_id: string }>(
+        'SELECT analysis_id FROM saved_commit_sets WHERE id = $1',
+        [id],
+      );
+      analysisId = existing.rows[0]?.analysis_id;
+      if (!analysisId) throw new Error('COMMIT_SET_NOT_FOUND');
+      if (input.name !== undefined) {
+        await client.query('UPDATE saved_commit_sets SET name = $2 WHERE id = $1', [
+          id,
+          input.name,
+        ]);
+      }
+      if (input.commitIds !== undefined) {
+        const uniqueCommitIds = [...new Set(input.commitIds)];
+        const valid = await client.query(
+          `SELECT count(*)::int AS count FROM analysis_commits
+           WHERE analysis_id = $1 AND commit_id = ANY($2::uuid[])`,
+          [analysisId, uniqueCommitIds],
+        );
+        if (valid.rows[0]?.count !== uniqueCommitIds.length) throw new Error('INVALID_COMMIT_SET');
+        await client.query('DELETE FROM saved_commit_set_members WHERE commit_set_id = $1', [id]);
+        await client.query(
+          `INSERT INTO saved_commit_set_members (commit_set_id, commit_id)
+           SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+          [id, uniqueCommitIds],
+        );
+      }
+    });
+    return reply.send({ id, analysisId, updated: true });
+  });
+
+  app.delete('/v1/commit-sets/:id', async (request, reply) => {
+    const id = parseUuid((request.params as { id?: string }).id);
+    const result = await pool.query('DELETE FROM saved_commit_sets WHERE id = $1', [id]);
+    if (!result.rowCount)
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Commit set not found' } });
+    return reply.code(204).send();
   });
 
   app.post('/v1/authors/merge', async (request, reply) => {
@@ -336,7 +430,8 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
          WHERE analysis_id = $1 AND resolved_identity_id = ANY($2::uuid[])`,
         [input.analysisId, input.identityIds],
       );
-      if (valid.rows[0]?.count !== new Set(input.identityIds).size) throw new Error('INVALID_AUTHOR_SELECTION');
+      if (valid.rows[0]?.count !== new Set(input.identityIds).size)
+        throw new Error('INVALID_AUTHOR_SELECTION');
       await client.query(
         `INSERT INTO author_groups (id, analysis_id, name, email, is_manual)
          VALUES ($1, $2, $3, $4, true)`,
@@ -387,7 +482,9 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
     return { id: groupId, unmerged: true };
   });
 
-  app.post('/v1/metrics/query', async (request) => queryMetrics(pool, MetricsQuerySchema.parse(request.body)));
+  app.post('/v1/metrics/query', async (request) =>
+    queryMetrics(pool, MetricsQuerySchema.parse(request.body)),
+  );
 
   app.post('/v1/metrics/compare', async (request) => {
     const queries = z.array(MetricsQuerySchema).min(2).max(4).parse(request.body);
@@ -425,7 +522,12 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
     request.log.error({ err: error }, 'request failed');
     if (error instanceof ZodError) {
       return reply.code(400).send({
-        error: { code: 'VALIDATION_ERROR', message: 'The request is invalid', requestId: request.id, details: error.flatten() },
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The request is invalid',
+          requestId: request.id,
+          details: error.flatten(),
+        },
       });
     }
     const known: Record<string, [number, string]> = {
@@ -434,10 +536,19 @@ export async function buildApp({ pool, queue, config }: AppDependencies): Promis
       INVALID_COMMIT_SET: [400, 'The commit set contains commits outside this analysis'],
       INVALID_AUTHOR_SELECTION: [400, 'The author selection is invalid'],
       AUTHOR_GROUP_NOT_FOUND: [404, 'Manual author group not found'],
+      COMMIT_SET_NOT_FOUND: [404, 'Commit set not found'],
       OBJECT_NOT_FOUND: [404, 'Object not found for this analysis'],
     };
     const [status, message] = known[error.message] ?? [500, 'The request could not be completed'];
-    return reply.code(status).send({ error: { code: error.message in known ? error.message : 'INTERNAL_ERROR', message, requestId: request.id } });
+    return reply
+      .code(status)
+      .send({
+        error: {
+          code: error.message in known ? error.message : 'INTERNAL_ERROR',
+          message,
+          requestId: request.id,
+        },
+      });
   });
 
   return app;

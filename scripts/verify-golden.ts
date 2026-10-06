@@ -20,58 +20,87 @@ const fixtures = {
   },
 } as const;
 
-const requested = process.argv[2] ?? 'cJSON';
-if (!(requested in fixtures)) throw new Error(`Choose one of: ${Object.keys(fixtures).join(', ')}`);
-const name = requested as keyof typeof fixtures;
-const fixture = fixtures[name];
-const mirror = resolve('storage/golden', `${name}.git`);
-try {
-  await access(mirror);
-} catch {
-  console.log(`Cloning ${name} fixture…`);
-  await cloneMirror(fixture.url, mirror, 60 * 60_000);
-}
-const oid = await resolveRef(mirror, fixture.sha);
-const useMailmap = await referenceHasMailmap(mirror, oid);
-let commits = 0n;
-let modifications = 0n;
-let added = 0n;
-let removed = 0n;
-for await (const commit of streamHistory(mirror, oid, useMailmap)) {
-  commits += 1n;
-  let commitChurn = 0n;
-  for (const file of commit.files) {
-    if (file.binary) continue;
-    added += file.added;
-    removed += file.removed;
-    commitChurn += file.added + file.removed;
-  }
-  if (commitChurn > 0n) modifications += 1n;
-  if (commits % 1_000n === 0n) process.stdout.write(`\r${commits.toLocaleString()} commits`);
-}
-process.stdout.write('\n');
+const requested = process.argv.slice(2);
+const selectedFixtures = requested.length === 0 ? Object.keys(fixtures) : requested;
 
-const csv = await readFile(resolve(fixture.csv), 'utf8');
-const expected = csv.split(/\r?\n/)[1]?.split(',');
-if (!expected) throw new Error('Golden CSV has no repository summary row');
-const actual = {
-  commits: String(commits),
-  added: String(added),
-  removed: String(removed),
-  growth: String(added - removed),
-  churn: String(added + removed),
-  modifications: String(modifications),
-};
-const wanted = {
-  commits: expected[3],
-  added: expected[7],
-  removed: expected[8],
-  growth: expected[9],
-  churn: expected[10],
-  modifications: expected[11],
-};
-console.table({ expected: wanted, actual });
-for (const key of Object.keys(wanted) as Array<keyof typeof wanted>) {
-  if (wanted[key] !== actual[key]) throw new Error(`${name} ${key}: expected ${wanted[key]}, received ${actual[key]}`);
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') quoted = !quoted;
+    else if (character === ',' && !quoted) {
+      fields.push(current);
+      current = '';
+    } else current += character;
+  }
+  fields.push(current);
+  return fields;
 }
-console.log(`${name} root metrics match ${fixture.csv}.`);
+
+async function verifyGolden(name: keyof typeof fixtures): Promise<void> {
+  const fixture = fixtures[name];
+  const mirror = resolve('storage/golden', `${name}.git`);
+  try {
+    await access(mirror);
+  } catch {
+    console.log(`Cloning ${name} fixture…`);
+    await cloneMirror(fixture.url, mirror, 60 * 60_000);
+  }
+  const oid = await resolveRef(mirror, fixture.sha);
+  const useMailmap = await referenceHasMailmap(mirror, oid);
+  let commits = 0n;
+  let modifications = 0n;
+  let added = 0n;
+  let removed = 0n;
+  for await (const commit of streamHistory(mirror, oid, useMailmap)) {
+    commits += 1n;
+    let commitChurn = 0n;
+    for (const file of commit.files) {
+      if (file.binary) continue;
+      added += file.added;
+      removed += file.removed;
+      commitChurn += file.added + file.removed;
+    }
+    if (commitChurn > 0n) modifications += 1n;
+    if (commits % 1_000n === 0n)
+      process.stdout.write(`\r${name}: ${commits.toLocaleString()} commits`);
+  }
+  process.stdout.write('\n');
+
+  const csv = await readFile(resolve(fixture.csv), 'utf8');
+  const [headerLine, summaryLine] = csv.split(/\r?\n/);
+  if (!headerLine || !summaryLine) throw new Error(`${fixture.csv} has no repository summary row`);
+  const header = parseCsvLine(headerLine);
+  const summary = parseCsvLine(summaryLine);
+  const value = (column: string): string => summary[header.indexOf(column)] ?? '';
+  const actual = {
+    commits: String(commits),
+    added: String(added),
+    removed: String(removed),
+    growth: String(added - removed),
+    churn: String(added + removed),
+    modifications: String(modifications),
+  };
+  const expected = {
+    commits: value('commit_count'),
+    added: value('added'),
+    removed: value('removed'),
+    growth: value('growth'),
+    churn: value('churn'),
+    modifications: value('modifications'),
+  };
+  console.table({ expected, actual });
+  for (const key of Object.keys(expected) as Array<keyof typeof expected>) {
+    if (expected[key] !== actual[key])
+      throw new Error(`${name} ${key}: expected ${expected[key]}, received ${actual[key]}`);
+  }
+  console.log(`${name} root metrics match ${fixture.csv}.`);
+}
+
+for (const requestedName of selectedFixtures) {
+  if (!(requestedName in fixtures))
+    throw new Error(`Choose one or more of: ${Object.keys(fixtures).join(', ')}`);
+  await verifyGolden(requestedName as keyof typeof fixtures);
+}
